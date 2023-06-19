@@ -1,6 +1,7 @@
 import maya.cmds as cmds
 from functools import partial
 
+coneName = 'quad_cone'
 coneShapeName = 'polyCone1'
 
 def adjAttr(slider, attr, dataType, *args):
@@ -13,14 +14,20 @@ def adjAttr(slider, attr, dataType, *args):
     
     cmds.setAttr(coneShapeName + '.' + attr, val) 
 
-def movePoint(floatField, axis, dir, *args):
+def movePoint(floatField, axis, dir, saSlider, shSlider, scSlider, *args):
+    # disable subdivision controls
+    cmds.intSliderGrp(saSlider, edit=True, enable=False)
+    cmds.intSliderGrp(shSlider, edit=True, enable=False)
+    cmds.intSliderGrp(scSlider, edit=True, enable=False)
+
+    # get value of field
     val = cmds.floatField(floatField, q=True, value=True)
     if dir == 'neg':
         val = val*-1
-    sel_vtx = cmds.ls(coneName + '.vtx[:]', fl=True)
     
+    # make dictionary of vertices grouped by height
+    sel_vtx = cmds.ls(coneName + '.vtx[:]', fl=True)
     vtx_by_h = {}
-
     for vtx in sel_vtx:
         y_coord = cmds.xform(vtx, q=True, ws=True, t=True)[1]
         if y_coord in vtx_by_h.keys():
@@ -28,7 +35,7 @@ def movePoint(floatField, axis, dir, *args):
         else:
             vtx_by_h[y_coord] = [vtx]
 
-
+    # adjust vertices
     num_layers = float(len(vtx_by_h)) - 1.0
     i = 0
     for k in vtx_by_h.keys():
@@ -43,6 +50,20 @@ def movePoint(floatField, axis, dir, *args):
                     print("Argument wrong")
         i += 1
 
+def resetCallback(pwindID, *pArgs):
+        # remake UI
+        if cmds.window(pwindID, exists=True):
+            cmds.deleteUI(pwindID)
+        createUI("Quad Cone")
+
+        # remake cone
+        conesLst = cmds.ls(coneName)
+        if len(conesLst)>0:
+            cmds.delete(conesLst)
+        
+        cmds.polyCone(name = coneName, sa=3)
+        cmds.select(coneName, r=True)
+
 def createUI(pWindowTitle):
     windowID = "myWindowID"
     
@@ -51,38 +72,37 @@ def createUI(pWindowTitle):
         
     cmds.window(windowID, title=pWindowTitle, sizeable=False, resizeToFitChildren=True)
     cmds.columnLayout(adjustableColumn=True)
-                         
-    def cancelCallback(*pArgs):
-        if cmds.window(windowID, exists=True):
-            cmds.deleteUI(windowID)
     
-    # the UI components
+    # subdivision controls
     cmds.separator(h=10, style='none')
 
-    HeightSlider = cmds.floatSliderGrp(label='Height', columnAlign= (1,'right'), 
-                                       field=True, min=1, max=20, value=1, step=0.1, dc = 'empty')
-    cmds.floatSliderGrp(HeightSlider,  e=True, dc = partial(adjAttr, HeightSlider, 'height', 'float'))
-
-    RadiusSlider = cmds.floatSliderGrp(label='Radius', columnAlign= (1,'right'), 
-                                       field=True, min=1, max=20, value=1, step=0.1, dc = 'empty')
-    cmds.floatSliderGrp(RadiusSlider,  e=True, dc = partial(adjAttr, RadiusSlider, 'radius', 'float'))
-
-    SubAxSlider = cmds.intSliderGrp(label='Subdivision Axis', columnAlign= (1,'right'), 
+    subAxSlider = cmds.intSliderGrp(label='Subdivision Axis', columnAlign= (1,'right'), 
                                     field=True, min=3, max=50, value=3, step=1, dc = 'empty')
-    cmds.intSliderGrp(SubAxSlider,  e=True, dc = partial(adjAttr, SubAxSlider, 'sa', 'int'))
+    cmds.intSliderGrp(subAxSlider,  e=True, dc = partial(adjAttr, subAxSlider, 'sa', 'int'))
 
-    SubHSlider = cmds.intSliderGrp(label='Subdivision Height', columnAlign= (1,'right'), 
+    subHSlider = cmds.intSliderGrp(label='Subdivision Height', columnAlign= (1,'right'), 
                                    field=True, min=1, max=50, value=1, step=1, dc = 'empty')
-    cmds.intSliderGrp(SubHSlider,  e=True, dc = partial(adjAttr, SubHSlider, 'sh', 'int'))
+    cmds.intSliderGrp(subHSlider,  e=True, dc = partial(adjAttr, subHSlider, 'sh', 'int'))
 
-    CapSlider = cmds.intSliderGrp(label='Subdivision Cap', columnAlign= (1,'right'), 
+    subCapSlider = cmds.intSliderGrp(label='Subdivision Cap', columnAlign= (1,'right'), 
                                   field=True, min=0, max=20, value=0, step=1, dc = 'empty')
-    cmds.intSliderGrp(CapSlider,  e=True, dc = partial(adjAttr, CapSlider, 'sc', 'int'))
+    cmds.intSliderGrp(subCapSlider,  e=True, dc = partial(adjAttr, subCapSlider, 'sc', 'int'))
+
+    cmds.separator(h=10, style='out')
+
+    # height and radius controls
+    heightSlider = cmds.floatSliderGrp(label='Height', columnAlign= (1,'right'), 
+                                       field=True, min=0.1, max=20, value=2, step=0.1, dc = 'empty')
+    cmds.floatSliderGrp(heightSlider,  e=True, dc = partial(adjAttr, heightSlider, 'height', 'float'))
+
+    radiusSlider = cmds.floatSliderGrp(label='Radius', columnAlign= (1,'right'), 
+                                       field=True, min=0.1, max=20, value=1, step=0.1, dc = 'empty')
+    cmds.floatSliderGrp(radiusSlider,  e=True, dc = partial(adjAttr, radiusSlider, 'radius', 'float'))
 
     cmds.separator(h=10, style='none')
 
-
-    cmds.text("Adjust position of top point (Do this last)")
+    # apex controls
+    cmds.text("Adjust position of apex")
     
     cmds.separator(h=10, style='none')
 
@@ -93,29 +113,34 @@ def createUI(pWindowTitle):
     cmds.text(label="X-axis: ")
     xAxisFloat = cmds.floatField(min = 0.1, max = 5, value = 1, step = 0.1)
     cmds.separator(h=10, style='none')
-    xAxisDecrButt = cmds.button(label='<-', command=partial(movePoint, xAxisFloat, 'x', 'neg'))
+    cmds.button(label='<-', command=partial(movePoint, xAxisFloat, 'x', 'neg', 
+                                            subAxSlider, subHSlider, subCapSlider))
     cmds.separator(h=10, style='none')
-    xAxisIncrButt = cmds.button(label='->', command=partial(movePoint, xAxisFloat, 'x', 'pos'))
-
+    cmds.button(label='->', command=partial(movePoint, xAxisFloat, 'x', 'pos', 
+                                            subAxSlider, subHSlider, subCapSlider))
     cmds.text(label="Z-axis: ")
     zAxisFloat = cmds.floatField(min = 0.1, max = 5, value = 1, step = 0.1)
     cmds.separator(h=10, style='none')
-    zAxisDecrButt = cmds.button(label='<-', command=partial(movePoint, zAxisFloat, 'z', 'neg'))
+    cmds.button(label='<-', command=partial(movePoint, zAxisFloat, 'z', 'neg', 
+                                            subAxSlider, subHSlider, subCapSlider))
     cmds.separator(h=10, style='none')
-    zAxisIncrButt = cmds.button(label='->', command=partial(movePoint, zAxisFloat, 'z', 'pos'))
+    cmds.button(label='->', command=partial(movePoint, zAxisFloat, 'z', 'pos',
+                                            subAxSlider, subHSlider, subCapSlider))
     
+    #reset button
+    cmds.setParent('..')
     cmds.separator(h=10, style='none')
+    cmds.button(label='Reset', command=partial(resetCallback, windowID))
     
     cmds.showWindow()
 
 createUI("Quad Cone")
 
-coneName = 'pCone1'
 # delete existing cones
 conesLst = cmds.ls(coneName)
 if len(conesLst)>0:
     cmds.delete(conesLst)
 
 # create cone to manipulate
-cmds.polyCone(sa=3)
+cmds.polyCone(name = coneName, sa=3)
 cmds.select(coneName, r=True)
